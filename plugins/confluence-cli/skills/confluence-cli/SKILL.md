@@ -5,41 +5,62 @@ description: Read, create, update, search, and attach files to Confluence Cloud 
 
 # Confluence CLI skill
 
-All operations go through two Python scripts shipped with the skill:
+All operations go through two Python scripts shipped inside this skill:
 
-- `~/.claude/skills/confluence-cli/scripts/setup.py` — one-time interactive credential setup.
-- `~/.claude/skills/confluence-cli/scripts/confluence.py` — the actual CLI (read/write/search/attachments).
+- `scripts/setup.py` — one-time interactive credential setup (run by the user in their terminal).
+- `scripts/confluence.py` — the actual CLI (read/write/search/attachments).
 
 Both are Python 3, stdlib only, so they run on macOS, Linux, and Windows without extra dependencies.
+
+## Locating the scripts at runtime
+
+Since this skill may be installed as a Claude Code plugin (in `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/...`) or as a user skill (in `~/.claude/skills/...`), **always resolve the script paths dynamically** with `find`:
+
+```bash
+CONFLUENCE_SCRIPT=$(find ~/.claude -name confluence.py -path '*confluence-cli*' -not -path '*BACKUP*' 2>/dev/null | head -1)
+CONFLUENCE_SETUP=$(find ~/.claude -name setup.py -path '*confluence-cli*' -not -path '*BACKUP*' 2>/dev/null | head -1)
+```
+
+Then invoke with `python3 "$CONFLUENCE_SCRIPT" <cmd>` etc. Do not hardcode paths.
+
+For templates / references, resolve similarly:
+
+```bash
+CONFLUENCE_SKILL_DIR=$(dirname "$(dirname "$CONFLUENCE_SCRIPT")")
+# $CONFLUENCE_SKILL_DIR/templates/
+# $CONFLUENCE_SKILL_DIR/references/storage-format.md
+```
 
 ## Prerequisites & first-time setup
 
 Before the first Confluence operation, credentials must be configured. Check with:
 
 ```bash
-python3 ~/.claude/skills/confluence-cli/scripts/confluence.py whoami
+python3 "$CONFLUENCE_SCRIPT" whoami
 ```
 
 - On success: JSON with the current user → proceed.
 - On failure with `Credentials missing`: **STOP. Do not ask the user for the token in chat.** Instead tell the user:
 
 > "Credenziali Confluence non configurate. Lancia nel tuo terminale:
-> `python3 ~/.claude/skills/confluence-cli/scripts/setup.py`
+> ```
+> python3 "$(find ~/.claude/plugins -name setup.py -path '*confluence-cli*' 2>/dev/null | head -1)"
+> ```
 > Lo script chiede email, site e API token (input nascosto), valida contro l'API, e salva in `~/.atlassian-token` con chmod 600. Fammi sapere quando hai finito e riprovo."
 
 Wait for the user to confirm before retrying. On Windows the user may need `python` instead of `python3`.
 
-If a call returns HTTP 401/403, credentials are expired or wrong: instruct the user to re-run `setup.py`.
+If a call returns HTTP 401/403, credentials are expired or wrong: instruct the user to re-run setup.py.
 
 ## Commands reference
 
-Always invoke via `python3 ~/.claude/skills/confluence-cli/scripts/confluence.py <cmd>`.
+Always invoke via `python3 "$CONFLUENCE_SCRIPT" <cmd>`.
 
 ### Read
 
 - `whoami` — current user (also used as health check).
 - `get-space <spaceKey>` — resolve a space key (e.g. `CS`) to its space id.
-- `get-page <pageId> [--body-format storage|view|atlas_doc_format]` — fetch a page. `storage` is the XHTML subset used for writes; `view` is the rendered HTML for human reading.
+- `get-page <pageId> [--body-format storage|view|atlas_doc_format]` — fetch a page. `storage` is the XHTML subset used for writes; `view` is rendered HTML for human reading.
 - `list-children <pageId> [--limit N]` — direct children pages of a page.
 - `list-folder <folderId> [--limit N]` — children of a folder (folders have their own endpoint in v2).
 - `search "<CQL>" [--limit N]` — CQL search. Example: `search 'space=CS AND title ~ "Gross Negligence"'`.
@@ -56,11 +77,11 @@ Always invoke via `python3 ~/.claude/skills/confluence-cli/scripts/confluence.py
 
 Write body content to a temp file in **storage format** (XHTML subset) and pass it via `--body-file`. Storage format is what the v2 API expects when `--representation storage` (default) is used. For small bodies use `--body '<p>...</p>'` inline.
 
-See `~/.claude/skills/confluence-cli/references/storage-format.md` for a cheatsheet (code blocks, tables, panels, links, images, TOC).
+See `$CONFLUENCE_SKILL_DIR/references/storage-format.md` for a cheatsheet (code blocks, tables, panels, links, images, TOC).
 
 ### Templates
 
-`~/.claude/skills/confluence-cli/templates/` contains starter storage-format skeletons:
+`$CONFLUENCE_SKILL_DIR/templates/` contains starter storage-format skeletons:
 
 - `spec-api.xml` — REST endpoint spec (Overview, Endpoint, Request, Response, Errors, Note).
 - `flow-doc.xml` — end-to-end flow / technical documentation.
@@ -73,7 +94,7 @@ Copy to a temp file, fill placeholders (`{{TITLE}}`, `{{OVERVIEW}}`, etc.), then
 ### Create a new page
 
 1. Ask the user: space key (default `CS`), parent page (ID or title — if title, resolve with `search` first), title of the new page.
-2. Pick a template from `templates/` or draft the body inline in storage format.
+2. Pick a template from `$CONFLUENCE_SKILL_DIR/templates/` or draft the body inline in storage format.
 3. Save the body to a tmp file: `/tmp/conf-body-$$.xml` (on Windows: `%TEMP%\conf-body.xml`).
 4. **Show the body preview to the user and ask for explicit approval before posting.**
 5. `create-page "<title>" --space-key CS --parent-id <id> --body-file /tmp/conf-body-$$.xml`.
@@ -101,16 +122,16 @@ Copy to a temp file, fill placeholders (`{{TITLE}}`, `{{OVERVIEW}}`, etc.), then
 
 Confluence does not accept Markdown natively. Two paths:
 
-- If `pandoc` is available: `pandoc input.md -f gfm -t html -o out.html`, wrap in page body (add `<ac:structured-macro>` for code blocks if needed, since pandoc's `<pre><code>` renders but not with syntax highlight).
+- If `pandoc` is available: `pandoc input.md -f gfm -t html -o out.html`, wrap in page body (add `<ac:structured-macro>` for code blocks since pandoc's `<pre><code>` renders without syntax highlight).
 - If not: convert manually using the cheatsheet in `references/storage-format.md`.
 
 ## Safety rules (MANDATORY)
 
-- **Never ask for tokens in chat.** Always redirect to `setup.py`.
+- **Never ask for tokens in chat.** Always redirect to setup.py.
 - **Never commit** the token file or any credential into git.
 - **Writes require confirmation.** Before `create-page`, `update-page`, `delete-page`, or `upload-attachment`, show the user the full preview (body content, target page/space, action summary) and wait for explicit approval in the current turn.
 - **`delete-page` is irreversible.** Require the user to say "delete" or equivalent explicit intent, not just "ok".
-- **Never retry a 401/403 with a different token guess.** Tell the user to re-run `setup.py`.
+- **Never retry a 401/403 with a different token guess.** Tell the user to re-run setup.py.
 - **Respect rate limits.** On HTTP 429, back off and report to the user.
 - **Do not dump long page bodies into chat.** Summarize or ask which sections the user wants to see.
 
@@ -126,8 +147,8 @@ Useful for CI or when the user stores the token in a password manager and export
 
 ## Troubleshooting
 
-- `Credentials missing` → run `setup.py`.
-- `HTTP 401 Unauthorized` → token wrong or revoked; re-run `setup.py`.
+- `Credentials missing` → run setup.py.
+- `HTTP 401 Unauthorized` → token wrong or revoked; re-run setup.py.
 - `HTTP 403 Forbidden` → token valid but user has no permission on that space/page; ask the user to check with an admin.
 - `HTTP 404 Not Found` on a page ID → the ID is wrong, or the page was deleted, or the user doesn't have access. Don't guess IDs.
 - `HTTP 409 Conflict` on `update-page` → version race condition; re-fetch and retry once.

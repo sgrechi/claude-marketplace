@@ -4,6 +4,12 @@ All notable changes to this marketplace are documented here. The format is based
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-04-23
+
+### Changed
+- **confluence-cli** plugin: reworded README and SKILL.md to reflect plugin terminology (was drafted as a user skill). Install instructions now lead with `/plugin marketplace add` + `/plugin install` and clarify that slash commands live in the Claude Code chat (not the terminal).
+- Replaced hardcoded `~/.claude/skills/confluence-cli/...` paths with dynamic discovery via `find ~/.claude -name <script> -path '*confluence-cli*'`, so the skill works regardless of install location (plugin cache vs local skills folder).
+
 ## [0.1.0] - 2026-04-23
 
 ### Added
