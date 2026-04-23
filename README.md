@@ -4,9 +4,7 @@ A curated collection of [Claude Code](https://docs.anthropic.com/claude-code) pl
 
 ## Available plugins
 
-### Experimental
-
-> **Warning:** Experimental plugins may have bugs, incomplete features, or APIs that change without notice. Use at your own risk and avoid relying on them for critical production work.
+### Stable
 
 - [**confluence-cli**](plugins/confluence-cli/README.md) — Read, create, update, and search Confluence Cloud pages; upload attachments/images. Auto-activates on Confluence-related prompts. Python 3 stdlib only, cross-platform.
 
