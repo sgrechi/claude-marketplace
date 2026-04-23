@@ -1,4 +1,4 @@
-# Pingus74 Claude Marketplace
+# Claude Marketplace
 
 A curated collection of [Claude Code](https://docs.anthropic.com/claude-code) plugins maintained by Stefano Grechi.
 
